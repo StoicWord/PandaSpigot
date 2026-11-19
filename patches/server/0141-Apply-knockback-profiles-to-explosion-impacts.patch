@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 07:09:39 +0000
+Subject: [PATCH] Apply knockback profiles to explosion impacts
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/net/minecraft/server/Explosion.java b/src/main/java/net/minecraft/server/Explosion.java
+index e605298073e4911c746d06465d09d6cae0a63f6c..01f8f00dea16a3518d67e737cba493d2323adb50 100644
+--- a/src/main/java/net/minecraft/server/Explosion.java
++++ b/src/main/java/net/minecraft/server/Explosion.java
+@@ -169,7 +169,32 @@ public class Explosion {
+                         entity.motZ += d10 * d14;
+                         */
+                         // This impulse method sets the dirty flag, so clients will get an immediate velocity update
+-                        entity.g(d8 * d14, d9 * d14, d10 * d14);
++                        // PandaSpigot start - Configurable knockback
++                        com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.WorldConfig displacementConfig =
++                                com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.getWorldConfig(entity.world);
++                        if (displacementConfig.isVanilla()) {
++                            entity.g(d8 * d14, d9 * d14, d10 * d14);
++                        } else {
++                            com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.Profile profile = displacementConfig.explosions;
++                            boolean grounded = entity.onGround;
++                            double horizontalMultiplier = grounded
++                                    ? displacementConfig.groundHorizontalMultiplier
++                                    : displacementConfig.airHorizontalMultiplier;
++                            double verticalMultiplier = grounded
++                                    ? displacementConfig.groundVerticalMultiplier
++                                    : displacementConfig.airVerticalMultiplier;
++                            entity.g(
++                                    d8 * d14 * profile.horizontalMultiplier * horizontalMultiplier,
++                                    d9 * d14 * profile.verticalMultiplier * verticalMultiplier,
++                                    d10 * d14 * profile.horizontalMultiplier * horizontalMultiplier);
++                            entity.motX *= profile.horizontalDragMultiplier;
++                            entity.motY *= profile.verticalDragMultiplier;
++                            entity.motZ *= profile.horizontalDragMultiplier;
++                            if (entity.motY > 0.0D && displacementConfig.pullDown > 0.0D) {
++                                entity.motY = Math.max(0.0D, entity.motY - displacementConfig.pullDown);
++                            }
++                        }
++                        // PandaSpigot end
+                         // PaperSpigot end
+ 
+                         if (entity instanceof EntityHuman && !((EntityHuman) entity).abilities.isInvulnerable && !world.paperSpigotConfig.disableExplosionKnockback) { // PaperSpigot

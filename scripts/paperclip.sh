@@ -6,7 +6,7 @@ basedir="$(cd "$1" && pwd -P)"
 
 (
     cd "$basedir"
-    ./gradlew paperclipJar
+    ./gradlew titaniumDistribution
 ) || (
     echo "Failed to build Paperclip jar."
     exit 1
@@ -18,4 +18,5 @@ echo ""
 echo ""
 echo "Build success!"
 echo "Copied final jar to $(cd "$basedir" && pwd -P)/paperclip.jar"
+echo "Created distribution at $(cd "$basedir" && pwd -P)/build/distributions/Titanium-1.0.zip"
 ) || exit 1

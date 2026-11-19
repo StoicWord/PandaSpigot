@@ -1,0 +1,119 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 12:14:41 +0000
+Subject: [PATCH] Use official Spark Bukkit distribution
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index cb7d161a324677b54a3a89816ceb35dc32f636d3..46f02e52fc3a7afbc6fcb0e8b27bc5bf20bd8dd1 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -67,9 +67,9 @@ fun TaskContainer.registerRunTask(
+ 
+ tasks {
+     processResources {
+-        from(rootProject.file("third_party/spark/spark-bukkit-1.0.jar")) {
++        from(rootProject.file("third_party/spark/spark-1.10.196-bukkit.jar")) {
+             into("META-INF/titanium")
+-            rename { "spark-bukkit-1.0.jar" }
++            rename { "spark-bukkit.jar" }
+         }
+     }
+ 
+diff --git a/src/main/java/org/spigotmc/TitaniumCommands.java b/src/main/java/org/spigotmc/TitaniumCommands.java
+index 0bebf87707b0e3871a7205ae86b74b545d31f07c..e5a2a2c1c16d802c6b25fed2df635729eb38d9d3 100644
+--- a/src/main/java/org/spigotmc/TitaniumCommands.java
++++ b/src/main/java/org/spigotmc/TitaniumCommands.java
+@@ -51,25 +51,33 @@ public final class TitaniumCommands {
+         if (TitaniumSettings.isCommandEnabled("commands.plugin-manager.enabled")) {
+             MinecraftServer.getServer().server.getCommandMap().register("Titanium", new PluginManagerCommand());
+         }
+-        if (TitaniumSettings.isCommandEnabled("commands.spark-alias.enabled")) {
++        if (TitaniumSettings.isCommandEnabled("commands.spark.enabled")) {
+             installBundledSpark();
+-            MinecraftServer.getServer().server.getCommandMap().register("Titanium", new SparkAliasCommand());
+         }
+     }
+ 
+     private static void installBundledSpark() {
+         File pluginsFolder = Bukkit.getPluginsFolder();
+-        File sparkJar = new File(pluginsFolder, "spark.jar");
+-        if (sparkJar.isFile()) {
+-            return;
+-        }
+         if (!pluginsFolder.isDirectory() && !pluginsFolder.mkdirs()) {
+             Bukkit.getLogger().severe("Could not create plugins directory for bundled Spark: " + pluginsFolder);
+             return;
+         }
+ 
++        File[] existingSparkJars = pluginsFolder.listFiles((directory, name) -> {
++            String lowerCaseName = name.toLowerCase(Locale.ROOT);
++            return lowerCaseName.startsWith("spark") && lowerCaseName.endsWith(".jar");
++        });
++        if (existingSparkJars == null) {
++            Bukkit.getLogger().severe("Could not inspect plugins directory for Spark: " + pluginsFolder);
++            return;
++        }
++        if (existingSparkJars.length > 0) {
++            return;
++        }
++
++        File sparkJar = new File(pluginsFolder, "spark.jar");
+         try (InputStream input = TitaniumCommands.class.getResourceAsStream(
+-                "/META-INF/titanium/spark-bukkit-1.0.jar")) {
++                "/META-INF/titanium/spark-bukkit.jar")) {
+             if (input == null) {
+                 Bukkit.getLogger().severe("Bundled Spark resource is missing; /spark will be unavailable.");
+                 return;
+@@ -172,7 +180,7 @@ public final class TitaniumCommands {
+             }
+             sendCommandLink(sender, "/tps", "View server performance");
+             sendCommandLink(sender, "/ver", "View server version");
+-            if (TitaniumSettings.isCommandEnabled("commands.spark-alias.enabled")) {
++            if (TitaniumSettings.isCommandEnabled("commands.spark.enabled")) {
+                 sendCommandLink(sender, "/spark", "Open the bundled Spark profiler");
+             }
+             if (TitaniumSettings.isCommandEnabled("commands.plugin-manager.enabled")) {
+@@ -553,28 +561,6 @@ public final class TitaniumCommands {
+         }
+     }
+ 
+-    private static final class SparkAliasCommand extends Command {
+-        private SparkAliasCommand() {
+-            super("spark");
+-            this.description = "Alias for the bundled Spark profiler command";
+-            this.usageMessage = "/spark <profiler arguments>";
+-        }
+-
+-        @Override
+-        public boolean execute(CommandSender sender, String label, String[] args) {
+-            Plugin spark = Bukkit.getPluginManager().getPlugin("spark");
+-            if (spark == null || !spark.isEnabled()) {
+-                sender.sendMessage(ChatColor.RED + "Spark is not loaded. Check plugins/spark.jar and restart the server.");
+-                return true;
+-            }
+-            String command = "profiler" + (args.length == 0 ? "" : " " + String.join(" ", args));
+-            if (!Bukkit.dispatchCommand(sender, command)) {
+-                sender.sendMessage(ChatColor.RED + "Spark's /profiler command is unavailable; check the server log.");
+-            }
+-            return true;
+-        }
+-    }
+-
+     private static void sendComponent(CommandSender sender, BaseComponent component) {
+         if (sender instanceof Player) {
+             ((Player) sender).spigot().sendMessage(component);
+diff --git a/src/main/java/org/spigotmc/TitaniumSettings.java b/src/main/java/org/spigotmc/TitaniumSettings.java
+index 00f91dcb717e82f93f0116902766058fc30c1c97..4287bfd2b5e2d2bcdb9fc90f52879f6ef5c0fce0 100644
+--- a/src/main/java/org/spigotmc/TitaniumSettings.java
++++ b/src/main/java/org/spigotmc/TitaniumSettings.java
+@@ -39,7 +39,7 @@ public final class TitaniumSettings {
+         config.addDefault("theme.text", "&f");
+         config.addDefault("commands.knockback.enabled", true);
+         config.addDefault("commands.plugin-manager.enabled", true);
+-        config.addDefault("commands.spark-alias.enabled", true);
++        config.addDefault("commands.spark.enabled", config.getBoolean("commands.spark-alias.enabled", true));
+         config.options().header("Titanium 1.0 settings. Colors use legacy Minecraft color codes.");
+         config.options().copyDefaults(true);
+         try {

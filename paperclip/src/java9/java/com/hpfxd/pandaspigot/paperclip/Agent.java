@@ -20,10 +20,12 @@ public final class Agent {
 
     public static void premain(final String agentArgs, final Instrumentation inst) {
         Agent.inst = inst;
+        SwmClassModifier.configure(inst);
     }
 
     public static void agentmain(final String agentArgs, final Instrumentation inst) {
         Agent.inst = inst;
+        SwmClassModifier.configure(inst);
     }
 
     @SuppressWarnings("unused") // This class replaces the Agent class in the java8 module when run on Java9+

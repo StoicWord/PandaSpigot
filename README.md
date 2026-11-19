@@ -1,5 +1,7 @@
-# PandaSpigot [![Build](https://img.shields.io/github/actions/workflow/status/hpfxd/PandaSpigot/build.yml?branch=master&label=Build)](https://github.com/hpfxd/PandaSpigot/actions/workflows/build.yml) [![Discord](https://img.shields.io/discord/1048733138655924274?label=Discord)](https://discord.gg/m6vCCX6Hvr) [![Servers](https://img.shields.io/bstats/servers/15154?label=Servers)](https://bstats.org/plugin/bukkit/PandaSpigot/15154)
-Fork of Paper for 1.8.8 focused on improved performance and stability.
+# Titanium 1.0 [![Build](https://img.shields.io/github/actions/workflow/status/hpfxd/PandaSpigot/build.yml?branch=master&label=Build)](https://github.com/hpfxd/PandaSpigot/actions/workflows/build.yml) [![Servers](https://img.shields.io/bstats/servers/15154?label=Servers)](https://bstats.org/plugin/bukkit/PandaSpigot/15154)
+PandaSpigot-based server for Minecraft 1.8.8, maintained by Hyouka Dev.
+
+Discord: [dsc.gg/hyoukadev](https://dsc.gg/hyoukadev)
 
 ## Highlights
 - **Backported API enhancements from newer versions**
@@ -21,10 +23,26 @@ Fork of Paper for 1.8.8 focused on improved performance and stability.
 See a full list of patches [here](./patches/).
 
 ## Using
-You can download the latest pre-built server JAR by clicking the download button below.  
-[![Download](https://custom-icon-badges.demolab.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white)](https://downloads.hpfxd.com/v2/projects/pandaspigot/versions/1.8.8/builds/latest/downloads/paperclip)
+Build Titanium locally with the commands below; the server JAR is written to
+`paperclip.jar`. The build also creates
+`build/distributions/Titanium-1.0.zip`, containing the server JAR, launch
+scripts, the SWM class modifier, and Spark as a separate plugin at
+`plugins/spark.jar`.
 
-For support, please join our [Discord](https://discord.gg/m6vCCX6Hvr).
+Run the distribution with `./run.sh` (Linux/macOS) or `run.bat` (Windows).
+These launchers enable Paperclip's agent before startup so that, when a
+SlimeWorldManager plugin JAR is already in `plugins/`, the class modifier
+embedded in `paperclip.jar` is activated before server classes load. Bukkit
+discovers and loads the SWM plugin as usual. If SWM is absent, Titanium starts
+without the modifier. The SWM plugin itself is not bundled; install a version
+compatible with 1.8.8. Java 8 users must use a launcher script; Java 9+ can
+also start `paperclip.jar` directly and its launcher agent will check for SWM.
+
+The bundled SWM class modifier is from the upstream GPL-3.0 project; its
+license and corresponding source snapshot are included under
+`licenses/slime-world-manager/` in the distribution.
+
+For support, join the [Titanium Discord](https://dsc.gg/hyoukadev).
 
 ## API 
 See our API patches [here](./patches/api/).  
@@ -67,12 +85,93 @@ dependencies {
 </details>
 
 ## Requirements
-To work with PandaSpigot, you will need:
+To build Titanium, you will need:
 - JDK 17 or higher
 - Git
 - Bash
 
 🧩 Although JDK 17 is required for building, the compiled JAR remains fully compatible with Java 8.
+
+## Knockback configuration
+
+PandaSpigot keeps the existing `friction`, `horizontal`, `vertical`,
+`verticalLimit`, `extraHorizontal`, and `extraVertical` settings in
+`pandaspigot.yml`. On startup it generates
+`titanium/combat/kbdisplacement.yml`, which supports a `VANILLA` mode and
+per-world named `CUSTOM` profiles. An existing root-level `kbdisplacement.yml`
+is copied into the new location and retained as a backup. Profile values are
+multipliers over those existing settings. Named profiles live under
+`profiles`; select one globally with `worlds.default.profile` or for an
+individual world with `worlds.<world>.profile`. Existing inline world settings
+remain supported as a backwards-compatible fallback.
+
+For example, create a sprint-only arena profile and assign it to one world:
+
+```yaml
+worlds:
+  default:
+    profile: default
+  arena:
+    profile: combos
+profiles:
+  default:
+    mode: CUSTOM
+    requiresSprint: false
+  combos:
+    mode: CUSTOM
+    requiresSprint: true
+    pullDown: 0.04
+    normalMelee:
+      horizontalMultiplier: 0.9
+      verticalMultiplier: 0.9
+    sprint:
+      horizontalMultiplier: 0.95
+```
+
+Damage profiles cover melee, sprint and critical hits, arrows, snowballs,
+eggs, fishing hooks, ender pearls, explosions, and other sources. Profiles only
+change knockback where the 1.8.8 damage path applies it; projectile launch
+speed and gravity are not modified. `horizontalDragMultiplier` and
+`verticalDragMultiplier` control post-impact velocity retention; `pullDown`
+adds a small downward counter-impulse at impact before vanilla gravity takes
+over. `requiresSprint: true` uses the vanilla path for a non-sprinting player
+hit and applies the custom profile to sprint hits. Values are validated and
+clamped to safe supported ranges on load.
+
+### Titanium commands
+
+The `titanium/` folder is generated on first start. `settings.yml` controls the
+brand strings, `&d`/`&7` theme, and command toggles;
+`combat/kbdisplacement.yml` holds named knockback profiles and per-world
+assignments. Existing root-level `kbdisplacement.yml` files are copied into
+that folder and retained.
+
+- `/titanium` shows the branded command menu.
+- `/titanium reload` reloads Titanium settings and combat profiles;
+  `/titanium save` saves them. `/titanium theme <primary> [secondary]` changes
+  the legacy color codes (for example `&d &7`). These management actions
+  require `titanium.settings.manage` (operators by default). Command enable
+  toggles still require a restart.
+- `/kb` displays the active world's profile; `/kb getdefault`, `/kb list`, and
+  `/kb view <profile>` browse profiles. Profile values are clickable and
+  suggest an edit command.
+- `/combat` displays the profile-management help. `/combat list`, `create`,
+  `edit`, `remove`, `set`, `view`, `viewProjectile`, `world`, `setdefault`,
+  `save`, and `reload` manage named profiles and per-world assignments.
+  Settings such as `normalMelee.horizontal`, `sprint.vertical`,
+  `requiresSprint`, `resetSprint`, and `pullDown` can be edited. The command
+  requires `titanium.knockback.view` (operators by default).
+- `/plugin enable|disable|load|reload <plugin>` manages plugin lifecycle and
+  loads JARs from the `plugins/` directory. It requires the
+  `titanium.plugin.manage` permission (operators by default). `reload` runs the
+  plugin's disable/enable lifecycle; it does not replace its classloader or
+  update already loaded code.
+- `/tps` shows 10-second and 1/5/15-minute TPS, average tick time, and player
+  count. Its clickable `[Server Info]` opens `/tps info`.
+- The official [Spark Bukkit plugin v1.10.196](https://ci.lucko.me/job/spark/548/artifact/spark-bukkit/build/libs/spark-1.10.196-bukkit.jar)
+  is embedded and installed into `plugins/spark.jar` on startup when no Spark
+  JAR is present; `/spark` uses its native command. `/ver` reports Titanium as
+  the server implementation, and the 1.8 client brand is `Titanium`.
 
 ### Panda Bash build script
 The `panda` Bash script is the entry point for setup, patching, and builds.

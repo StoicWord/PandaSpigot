@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 07:43:28 +0000
+Subject: [PATCH] Use Titanium gray command theme
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/org/spigotmc/TitaniumCommands.java b/src/main/java/org/spigotmc/TitaniumCommands.java
+index ad637dff690bbc95c91b68c5e6519a3f46159903..be5881a8e681df3f5779f83fd011256b4e8a0480 100644
+--- a/src/main/java/org/spigotmc/TitaniumCommands.java
++++ b/src/main/java/org/spigotmc/TitaniumCommands.java
+@@ -23,6 +23,7 @@ import java.util.List;
+ import java.util.Locale;
+ 
+ public final class TitaniumCommands {
++    private static final ChatColor BRAND_COLOR = ChatColor.GRAY;
+     private static final String KNOCKBACK_PERMISSION = "titanium.knockback.view";
+     private static final String PLUGIN_PERMISSION = "titanium.plugin.manage";
+ 
+@@ -52,9 +53,9 @@ public final class TitaniumCommands {
+ 
+         @Override
+         public boolean execute(CommandSender sender, String label, String[] args) {
+-            sender.sendMessage(ChatColor.GOLD + "Titanium 1.0");
+-            sender.sendMessage(ChatColor.GRAY + "Author: Hyouka Dev");
+-            sender.sendMessage(ChatColor.GRAY + "Discord: https://dsc.gg/hyoukadev");
++            sender.sendMessage(BRAND_COLOR + "Titanium 1.0");
++            sender.sendMessage(BRAND_COLOR + "Author: Hyouka Dev");
++            sender.sendMessage(BRAND_COLOR + "Discord: https://dsc.gg/hyoukadev");
+             return true;
+         }
+     }
+@@ -84,12 +85,12 @@ public final class TitaniumCommands {
+             PandaSpigotWorldConfig.KnockbackConfig legacy =
+                     PandaSpigotConfig.getWorldConfig(worldName).knockback;
+ 
+-            sender.sendMessage(ChatColor.GOLD + "Titanium knockback - " + worldName + " (" + displacement.mode + ")");
+-            sender.sendMessage(ChatColor.GRAY + "Legacy: friction=" + legacy.friction
++            sender.sendMessage(BRAND_COLOR + "Titanium knockback - " + worldName + " (" + displacement.mode + ")");
++            sender.sendMessage(BRAND_COLOR + "Legacy: friction=" + legacy.friction
+                     + ", horizontal=" + legacy.horizontal + ", vertical=" + legacy.vertical
+                     + ", verticalLimit=" + legacy.verticalLimit + ", extraHorizontal=" + legacy.extraHorizontal
+                     + ", extraVertical=" + legacy.extraVertical);
+-            sender.sendMessage(ChatColor.GRAY + "pullDown=" + displacement.pullDown
++            sender.sendMessage(BRAND_COLOR + "pullDown=" + displacement.pullDown
+                     + ", stackVelocity=" + displacement.stackVelocity
+                     + ", attackerSlowdown=" + displacement.attackerSlowdown);
+             sendProfile(sender, "normalMelee", displacement.normalMelee);
+@@ -106,7 +107,7 @@ public final class TitaniumCommands {
+         }
+ 
+         private static void sendProfile(CommandSender sender, String name, PandaSpigotKnockbackConfig.Profile profile) {
+-            sender.sendMessage(ChatColor.GRAY + name + ": horizontal=" + profile.horizontalMultiplier
++            sender.sendMessage(BRAND_COLOR + name + ": horizontal=" + profile.horizontalMultiplier
+                     + ", vertical=" + profile.verticalMultiplier
+                     + ", friction=" + profile.frictionMultiplier
+                     + ", horizontalDrag=" + profile.horizontalDragMultiplier

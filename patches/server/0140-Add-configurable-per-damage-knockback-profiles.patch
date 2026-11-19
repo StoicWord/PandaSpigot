@@ -1,0 +1,589 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 06:54:22 +0000
+Subject: [PATCH] Add configurable per-damage knockback profiles
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index c63cd15c13b503d91ef0245ffe0de7f85dd6f540..86b09a5dc1b772c9744cc7b86d84f20f60bed47c 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -65,6 +65,17 @@ public class PandaSpigotConfig {
+             
+             // call after save
+             initWorlds(worldsNode);
++            if (defaultWorldConfig.knockback == null) {
++                defaultWorldConfig.knockback = new PandaSpigotWorldConfig.KnockbackConfig();
++            }
++            defaultWorldConfig.knockback.validate("default");
++            for (Map.Entry<String, PandaSpigotWorldConfig> entry : worldConfigs.entrySet()) {
++                if (entry.getValue().knockback == null) {
++                    entry.getValue().knockback = new PandaSpigotWorldConfig.KnockbackConfig();
++                }
++                entry.getValue().knockback.validate(entry.getKey());
++            }
++            PandaSpigotKnockbackConfig.init(new File(file.getParentFile(), "kbdisplacement.yml"));
+         } catch (Exception e) {
+             throw Throwables.propagate(e);
+         }
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4bc776b5c56d1e18e28413fbc2433afdee715879
+--- /dev/null
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java
+@@ -0,0 +1,349 @@
++package com.hpfxd.pandaspigot.config;
++
++import com.google.common.base.Throwables;
++import com.hpfxd.configurate.eoyaml.EOYamlConfigurationLoader;
++import net.minecraft.server.DamageSource;
++import net.minecraft.server.Entity;
++import net.minecraft.server.EntityDamageSourceIndirect;
++import net.minecraft.server.EntityEgg;
++import net.minecraft.server.EntityEnderPearl;
++import net.minecraft.server.EntityFishingHook;
++import net.minecraft.server.EntityHuman;
++import net.minecraft.server.EntityLiving;
++import net.minecraft.server.EntityArrow;
++import net.minecraft.server.EntitySnowball;
++import org.bukkit.Bukkit;
++import org.spongepowered.configurate.CommentedConfigurationNode;
++import org.spongepowered.configurate.ConfigurationNode;
++import org.spongepowered.configurate.objectmapping.ConfigSerializable;
++import org.spongepowered.configurate.objectmapping.ObjectMapper;
++import org.spongepowered.configurate.objectmapping.meta.Comment;
++import org.spongepowered.configurate.util.MapFactories;
++import org.spongepowered.configurate.util.NamingSchemes;
++
++import java.io.File;
++import java.util.HashMap;
++import java.util.Locale;
++import java.util.Map;
++
++public final class PandaSpigotKnockbackConfig {
++    private static WorldConfig defaultWorldConfig;
++    private static final Map<String, WorldConfig> worldConfigs = new HashMap<>();
++
++    private PandaSpigotKnockbackConfig() {}
++
++    public static void init(File file) {
++        EOYamlConfigurationLoader loader = EOYamlConfigurationLoader.builder()
++                .file(file)
++                .defaultOptions(o -> o
++                        .header("Per-world knockback displacement settings for PandaSpigot.\n" +
++                                "Profile values are multipliers over the corresponding settings in pandaspigot.yml.")
++                        .mapFactory(MapFactories.insertionOrdered())
++                        .serializers(build -> build.registerAnnotatedObjects(ObjectMapper.factoryBuilder()
++                                .defaultNamingScheme(NamingSchemes.CAMEL_CASE)
++                                .build())))
++                .build();
++
++        try {
++            CommentedConfigurationNode root = loader.load();
++            CommentedConfigurationNode worldsNode = root.node("worlds")
++                    .comment("The default profile is used by worlds without their own entry.\n" +
++                            "A world entry can override the default values with the same settings.");
++            CommentedConfigurationNode defaultNode = worldsNode.node("default");
++            defaultWorldConfig = defaultNode.get(WorldConfig.class);
++            defaultWorldConfig.inheritMissing(WorldConfig.defaults());
++            defaultWorldConfig.validate("default");
++            defaultNode.set(defaultWorldConfig);
++            loader.save(root);
++
++            worldConfigs.clear();
++            for (Map.Entry<Object, ? extends ConfigurationNode> entry : worldsNode.childrenMap().entrySet()) {
++                Object worldName = entry.getKey();
++                if (worldName.equals("default")) {
++                    continue;
++                }
++
++                WorldConfig worldConfig = entry.getValue().get(WorldConfig.class);
++                worldConfig.inheritMissing(defaultWorldConfig);
++                worldConfig.validate(worldName.toString());
++                worldConfigs.put(worldName.toString(), worldConfig);
++            }
++        } catch (Exception e) {
++            throw Throwables.propagate(e);
++        }
++    }
++
++    public static WorldConfig getWorldConfig(String worldName) {
++        return worldConfigs.getOrDefault(worldName, defaultWorldConfig);
++    }
++
++    public static WorldConfig getWorldConfig(net.minecraft.server.World world) {
++        return getWorldConfig(world.worldData.getName());
++    }
++
++    @ConfigSerializable
++    @SuppressWarnings({"FieldCanBeLocal", "FieldMayBeFinal"})
++    public static class WorldConfig {
++        @Comment("VANILLA uses the original 1.8 knockback algorithm. CUSTOM uses the multipliers below.")
++        public String mode;
++
++        @Comment("Extra downward impulse applied to positive vertical velocity on impact. Set to 0 to use vanilla gravity only.")
++        public Double pullDown;
++
++        @Comment("Lower bound for vertical velocity after knockback. The existing verticalLimit in pandaspigot.yml remains the upper bound.")
++        public Double verticalVelocityMinimum;
++
++        @Comment("Multiplier applied to the target's knockback resistance attribute.")
++        public Double resistanceMultiplier;
++
++        @Comment("Attacker horizontal velocity multiplier after a sprint hit.")
++        public Double attackerSlowdown;
++
++        @Comment("When false, each hit replaces the target's velocity with the new knockback impulse.")
++        public Boolean stackVelocity;
++
++        @Comment("Reset horizontal and vertical velocity independently before applying knockback.")
++        public Boolean resetHorizontalVelocity;
++        public Boolean resetVerticalVelocity;
++
++        @Comment("Enable separate multipliers for targets hit while grounded or airborne.")
++        public Boolean groundKnockbackEnabled;
++        public Boolean airKnockbackEnabled;
++        public Double groundHorizontalMultiplier;
++        public Double groundVerticalMultiplier;
++        public Double airHorizontalMultiplier;
++        public Double airVerticalMultiplier;
++
++        @Comment("Each damage profile scales the existing friction/horizontal/vertical settings in pandaspigot.yml.")
++        public Profile normalMelee;
++        public Profile sprint;
++        public Profile critical;
++        public Profile arrows;
++        public Profile snowballs;
++        public Profile eggs;
++        public Profile fishingHooks;
++        public Profile enderPearls;
++        public Profile explosions;
++        public Profile other;
++
++        private static WorldConfig defaults() {
++            WorldConfig config = new WorldConfig();
++            config.mode = "CUSTOM";
++            config.pullDown = 0.0D;
++            config.verticalVelocityMinimum = -1.0D;
++            config.resistanceMultiplier = 1.0D;
++            config.attackerSlowdown = 0.6D;
++            config.stackVelocity = true;
++            config.resetHorizontalVelocity = false;
++            config.resetVerticalVelocity = false;
++            config.groundKnockbackEnabled = true;
++            config.airKnockbackEnabled = true;
++            config.groundHorizontalMultiplier = 1.0D;
++            config.groundVerticalMultiplier = 1.0D;
++            config.airHorizontalMultiplier = 1.0D;
++            config.airVerticalMultiplier = 1.0D;
++            config.normalMelee = Profile.defaults();
++            config.sprint = Profile.defaults();
++            config.critical = Profile.defaults();
++            config.arrows = Profile.defaults();
++            config.snowballs = Profile.defaults();
++            config.eggs = Profile.defaults();
++            config.fishingHooks = Profile.defaults();
++            config.enderPearls = Profile.defaults();
++            config.explosions = Profile.defaults();
++            config.other = Profile.defaults();
++            return config;
++        }
++
++        private void inheritMissing(WorldConfig fallback) {
++            if (this.mode == null) this.mode = fallback.mode;
++            if (this.pullDown == null) this.pullDown = fallback.pullDown;
++            if (this.verticalVelocityMinimum == null) this.verticalVelocityMinimum = fallback.verticalVelocityMinimum;
++            if (this.resistanceMultiplier == null) this.resistanceMultiplier = fallback.resistanceMultiplier;
++            if (this.attackerSlowdown == null) this.attackerSlowdown = fallback.attackerSlowdown;
++            if (this.stackVelocity == null) this.stackVelocity = fallback.stackVelocity;
++            if (this.resetHorizontalVelocity == null) this.resetHorizontalVelocity = fallback.resetHorizontalVelocity;
++            if (this.resetVerticalVelocity == null) this.resetVerticalVelocity = fallback.resetVerticalVelocity;
++            if (this.groundKnockbackEnabled == null) this.groundKnockbackEnabled = fallback.groundKnockbackEnabled;
++            if (this.airKnockbackEnabled == null) this.airKnockbackEnabled = fallback.airKnockbackEnabled;
++            if (this.groundHorizontalMultiplier == null) this.groundHorizontalMultiplier = fallback.groundHorizontalMultiplier;
++            if (this.groundVerticalMultiplier == null) this.groundVerticalMultiplier = fallback.groundVerticalMultiplier;
++            if (this.airHorizontalMultiplier == null) this.airHorizontalMultiplier = fallback.airHorizontalMultiplier;
++            if (this.airVerticalMultiplier == null) this.airVerticalMultiplier = fallback.airVerticalMultiplier;
++            this.normalMelee = inherit(this.normalMelee, fallback.normalMelee);
++            this.sprint = inherit(this.sprint, fallback.sprint);
++            this.critical = inherit(this.critical, fallback.critical);
++            this.arrows = inherit(this.arrows, fallback.arrows);
++            this.snowballs = inherit(this.snowballs, fallback.snowballs);
++            this.eggs = inherit(this.eggs, fallback.eggs);
++            this.fishingHooks = inherit(this.fishingHooks, fallback.fishingHooks);
++            this.enderPearls = inherit(this.enderPearls, fallback.enderPearls);
++            this.explosions = inherit(this.explosions, fallback.explosions);
++            this.other = inherit(this.other, fallback.other);
++        }
++
++        private static Profile inherit(Profile profile, Profile fallback) {
++            if (profile == null) {
++                profile = new Profile();
++            }
++            profile.inheritMissing(fallback);
++            return profile;
++        }
++
++        public boolean isVanilla() {
++            return "VANILLA".equals(this.mode);
++        }
++
++        public Profile getProfile(Entity attacker, DamageSource source, Entity target) {
++            if (source != null && (source.isExplosion() || "fireball".equals(source.translationIndex))) {
++                return this.explosions;
++            }
++
++            Entity proximateSource = source instanceof EntityDamageSourceIndirect
++                    ? ((EntityDamageSourceIndirect) source).getProximateDamageSource()
++                    : attacker;
++            if (proximateSource instanceof EntityArrow) {
++                return this.arrows;
++            }
++            if (proximateSource instanceof EntitySnowball) {
++                return this.snowballs;
++            }
++            if (proximateSource instanceof EntityEgg) {
++                return this.eggs;
++            }
++            if (proximateSource instanceof EntityFishingHook) {
++                return this.fishingHooks;
++            }
++            if (proximateSource instanceof EntityEnderPearl) {
++                return this.enderPearls;
++            }
++
++            if (attacker instanceof EntityHuman && target instanceof EntityLiving) {
++                EntityHuman human = (EntityHuman) attacker;
++                if (!human.world.paperSpigotConfig.disablePlayerCrits
++                        && human.fallDistance > 0.0F
++                        && !human.onGround
++                        && !human.k_()
++                        && !human.V()
++                        && !human.hasEffect(net.minecraft.server.MobEffectList.BLINDNESS)
++                        && human.vehicle == null) {
++                    return this.critical;
++                }
++                if (human.isSprinting()) {
++                    return this.sprint;
++                }
++            }
++
++            return attacker instanceof EntityLiving ? this.normalMelee : this.other;
++        }
++
++        public void validate(String worldName) {
++            if (this.mode == null || (!this.mode.equalsIgnoreCase("VANILLA") && !this.mode.equalsIgnoreCase("CUSTOM"))) {
++                Bukkit.getLogger().warning("Invalid knockback mode for world '" + worldName + "'; using CUSTOM.");
++                this.mode = "CUSTOM";
++            } else {
++                this.mode = this.mode.toUpperCase(Locale.ROOT);
++            }
++
++            this.pullDown = clamp(this.pullDown, 0.0D, 1.0D, 0.0D, worldName, "pullDown");
++            this.verticalVelocityMinimum = clamp(this.verticalVelocityMinimum, -4.0D, 0.0D, -1.0D, worldName, "verticalVelocityMinimum");
++            this.resistanceMultiplier = clamp(this.resistanceMultiplier, 0.0D, 4.0D, 1.0D, worldName, "resistanceMultiplier");
++            this.attackerSlowdown = clamp(this.attackerSlowdown, 0.0D, 1.0D, 0.6D, worldName, "attackerSlowdown");
++            this.groundHorizontalMultiplier = clamp(this.groundHorizontalMultiplier, 0.0D, 4.0D, 1.0D, worldName, "groundHorizontalMultiplier");
++            this.groundVerticalMultiplier = clamp(this.groundVerticalMultiplier, 0.0D, 4.0D, 1.0D, worldName, "groundVerticalMultiplier");
++            this.airHorizontalMultiplier = clamp(this.airHorizontalMultiplier, 0.0D, 4.0D, 1.0D, worldName, "airHorizontalMultiplier");
++            this.airVerticalMultiplier = clamp(this.airVerticalMultiplier, 0.0D, 4.0D, 1.0D, worldName, "airVerticalMultiplier");
++
++            this.normalMelee = validate(this.normalMelee, worldName, "normalMelee");
++            this.sprint = validate(this.sprint, worldName, "sprint");
++            this.critical = validate(this.critical, worldName, "critical");
++            this.arrows = validate(this.arrows, worldName, "arrows");
++            this.snowballs = validate(this.snowballs, worldName, "snowballs");
++            this.eggs = validate(this.eggs, worldName, "eggs");
++            this.fishingHooks = validate(this.fishingHooks, worldName, "fishingHooks");
++            this.enderPearls = validate(this.enderPearls, worldName, "enderPearls");
++            this.explosions = validate(this.explosions, worldName, "explosions");
++            this.other = validate(this.other, worldName, "other");
++        }
++
++        private static Profile validate(Profile profile, String worldName, String profileName) {
++            if (profile == null) {
++                Bukkit.getLogger().warning("Missing knockback profile '" + profileName + "' for world '" + worldName + "'; using defaults.");
++                profile = new Profile();
++            }
++
++            String prefix = profileName + ".";
++            profile.frictionMultiplier = clamp(profile.frictionMultiplier, 0.1D, 4.0D, 1.0D, worldName, prefix + "frictionMultiplier");
++            profile.horizontalDragMultiplier = clamp(profile.horizontalDragMultiplier, 0.0D, 2.0D, 1.0D, worldName, prefix + "horizontalDragMultiplier");
++            profile.verticalDragMultiplier = clamp(profile.verticalDragMultiplier, 0.0D, 2.0D, 1.0D, worldName, prefix + "verticalDragMultiplier");
++            profile.horizontalMultiplier = clamp(profile.horizontalMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "horizontalMultiplier");
++            profile.verticalMultiplier = clamp(profile.verticalMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "verticalMultiplier");
++            profile.verticalLimitMultiplier = clamp(profile.verticalLimitMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "verticalLimitMultiplier");
++            profile.sprintHorizontalMultiplier = clamp(profile.sprintHorizontalMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "sprintHorizontalMultiplier");
++            profile.sprintVerticalMultiplier = clamp(profile.sprintVerticalMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "sprintVerticalMultiplier");
++            profile.resistanceMultiplier = clamp(profile.resistanceMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "resistanceMultiplier");
++            profile.attackerSlowdownMultiplier = clamp(profile.attackerSlowdownMultiplier, 0.0D, 4.0D, 1.0D, worldName, prefix + "attackerSlowdownMultiplier");
++            return profile;
++        }
++
++        private static double clamp(double value, double minimum, double maximum, double fallback, String worldName, String setting) {
++            if (Double.isNaN(value) || Double.isInfinite(value)) {
++                Bukkit.getLogger().warning("Invalid knockback value '" + setting + "' for world '" + worldName + "'; using " + fallback + ".");
++                return fallback;
++            }
++            double clamped = Math.max(minimum, Math.min(maximum, value));
++            if (clamped != value) {
++                Bukkit.getLogger().warning("Knockback value '" + setting + "' for world '" + worldName + "' is outside the supported range; clamped to " + clamped + ".");
++            }
++            return clamped;
++        }
++    }
++
++    @ConfigSerializable
++    @SuppressWarnings({"FieldCanBeLocal", "FieldMayBeFinal"})
++    public static class Profile {
++        @Comment("Multipliers are applied to the matching legacy values in pandaspigot.yml.")
++        public Double frictionMultiplier;
++        @Comment("Post-impact velocity retention. A value of 1.0 preserves the normal 1.8 tick drag.")
++        public Double horizontalDragMultiplier;
++        public Double verticalDragMultiplier;
++        public Double horizontalMultiplier;
++        public Double verticalMultiplier;
++        public Double verticalLimitMultiplier;
++        @Comment("Sprint-only multipliers for extraHorizontal and extraVertical.")
++        public Double sprintHorizontalMultiplier;
++        public Double sprintVerticalMultiplier;
++        @Comment("Scales the target's knockback resistance attribute.")
++        public Double resistanceMultiplier;
++        @Comment("Scales attackerSlowdown for sprint hits.")
++        public Double attackerSlowdownMultiplier;
++
++        private static Profile defaults() {
++            Profile profile = new Profile();
++            profile.frictionMultiplier = 1.0D;
++            profile.horizontalDragMultiplier = 1.0D;
++            profile.verticalDragMultiplier = 1.0D;
++            profile.horizontalMultiplier = 1.0D;
++            profile.verticalMultiplier = 1.0D;
++            profile.verticalLimitMultiplier = 1.0D;
++            profile.sprintHorizontalMultiplier = 1.0D;
++            profile.sprintVerticalMultiplier = 1.0D;
++            profile.resistanceMultiplier = 1.0D;
++            profile.attackerSlowdownMultiplier = 1.0D;
++            return profile;
++        }
++
++        private void inheritMissing(Profile fallback) {
++            if (this.frictionMultiplier == null) this.frictionMultiplier = fallback.frictionMultiplier;
++            if (this.horizontalDragMultiplier == null) this.horizontalDragMultiplier = fallback.horizontalDragMultiplier;
++            if (this.verticalDragMultiplier == null) this.verticalDragMultiplier = fallback.verticalDragMultiplier;
++            if (this.horizontalMultiplier == null) this.horizontalMultiplier = fallback.horizontalMultiplier;
++            if (this.verticalMultiplier == null) this.verticalMultiplier = fallback.verticalMultiplier;
++            if (this.verticalLimitMultiplier == null) this.verticalLimitMultiplier = fallback.verticalLimitMultiplier;
++            if (this.sprintHorizontalMultiplier == null) this.sprintHorizontalMultiplier = fallback.sprintHorizontalMultiplier;
++            if (this.sprintVerticalMultiplier == null) this.sprintVerticalMultiplier = fallback.sprintVerticalMultiplier;
++            if (this.resistanceMultiplier == null) this.resistanceMultiplier = fallback.resistanceMultiplier;
++            if (this.attackerSlowdownMultiplier == null) this.attackerSlowdownMultiplier = fallback.attackerSlowdownMultiplier;
++        }
++    }
++}
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+index f8a434abfe92d31e390b70788805128fd1769a9f..3103cc626a42492c2d66e77a5e230e8490513130 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+@@ -1,5 +1,6 @@
+ package com.hpfxd.pandaspigot.config;
+ 
++import org.bukkit.Bukkit;
+ import org.spongepowered.configurate.objectmapping.ConfigSerializable;
+ import org.spongepowered.configurate.objectmapping.meta.Comment;
+ 
+@@ -17,6 +18,27 @@ public class PandaSpigotWorldConfig {
+         public double verticalLimit = 0.4000000059604645;
+         public double extraHorizontal = 0.5;
+         public double extraVertical = 0.1;
++
++        public void validate(String worldName) {
++            this.friction = clamp(this.friction, 0.1D, 10.0D, 2.0D, worldName, "friction");
++            this.horizontal = clamp(this.horizontal, 0.0D, 4.0D, 0.4D, worldName, "horizontal");
++            this.vertical = clamp(this.vertical, -4.0D, 4.0D, 0.4D, worldName, "vertical");
++            this.verticalLimit = clamp(this.verticalLimit, -4.0D, 4.0D, 0.4000000059604645D, worldName, "verticalLimit");
++            this.extraHorizontal = clamp(this.extraHorizontal, 0.0D, 4.0D, 0.5D, worldName, "extraHorizontal");
++            this.extraVertical = clamp(this.extraVertical, -4.0D, 4.0D, 0.1D, worldName, "extraVertical");
++        }
++
++        private static double clamp(double value, double minimum, double maximum, double fallback, String worldName, String setting) {
++            if (Double.isNaN(value) || Double.isInfinite(value)) {
++                Bukkit.getLogger().warning("Invalid knockback value '" + setting + "' for world '" + worldName + "'; using " + fallback + ".");
++                return fallback;
++            }
++            double clamped = Math.max(minimum, Math.min(maximum, value));
++            if (clamped != value) {
++                Bukkit.getLogger().warning("Knockback value '" + setting + "' for world '" + worldName + "' is outside the supported range; clamped to " + clamped + ".");
++            }
++            return clamped;
++        }
+     }
+ 
+     @Comment("This option makes it so that when players are teleported to a location\n" +
+diff --git a/src/main/java/net/minecraft/server/EntityHuman.java b/src/main/java/net/minecraft/server/EntityHuman.java
+index 524ff60ada7392ec1fd803661f957c19c50b2c2e..f7b6560445836c42a081aabf32d775e749477156 100644
+--- a/src/main/java/net/minecraft/server/EntityHuman.java
++++ b/src/main/java/net/minecraft/server/EntityHuman.java
+@@ -1007,19 +1007,31 @@ public abstract class EntityHuman extends EntityLiving {
+                     double d0 = entity.motX;
+                     double d1 = entity.motY;
+                     double d2 = entity.motZ;
+-                    boolean flag2 = entity.damageEntity(DamageSource.playerAttack(this), f);
++                    DamageSource damagesource = DamageSource.playerAttack(this);
++                    boolean flag2 = entity.damageEntity(damagesource, f);
+ 
+                     if (flag2) {
+                         if (i > 0) {
+-                            // PandaSpigot start - Configurable knockback
+                             com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig.KnockbackConfig knockbackConfig = entity.world.pandaSpigotConfig.knockback;
++                            com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.WorldConfig displacementConfig =
++                                    com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.getWorldConfig(entity.world);
++                            com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.Profile profile =
++                                    displacementConfig.getProfile(this, damagesource, entity);
++                            double extraHorizontal = displacementConfig.isVanilla() ? 0.5D : knockbackConfig.extraHorizontal;
++                            double extraVertical = displacementConfig.isVanilla() ? 0.1D : knockbackConfig.extraVertical;
++                            double attackerSlowdown = 0.6D;
++                            if (!displacementConfig.isVanilla()) {
++                                extraHorizontal *= profile.sprintHorizontalMultiplier;
++                                extraVertical *= profile.sprintVerticalMultiplier;
++                                attackerSlowdown = Math.max(0.0D, Math.min(1.0D,
++                                        displacementConfig.attackerSlowdown * profile.attackerSlowdownMultiplier));
++                            }
+                             entity.g(
+-                                    -MathHelper.sin(this.yaw * 3.1415927F / 180.0F) * (float) i * knockbackConfig.extraHorizontal,
+-                                    knockbackConfig.extraVertical,
+-                                    MathHelper.cos(this.yaw * 3.1415927F / 180.0F) * (float) i * knockbackConfig.extraHorizontal);
+-                            // PandaSpigot end
+-                            this.motX *= 0.6D;
+-                            this.motZ *= 0.6D;
++                                    -MathHelper.sin(this.yaw * 3.1415927F / 180.0F) * (float) i * extraHorizontal,
++                                    extraVertical,
++                                    MathHelper.cos(this.yaw * 3.1415927F / 180.0F) * (float) i * extraHorizontal);
++                            this.motX *= attackerSlowdown;
++                            this.motZ *= attackerSlowdown;
+                             this.setSprinting(false);
+                         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index 32752dfad24bc7883b1ab52e29834f1aa6fa60c6..34ca019f69c40ba3e5f08a4c0a8d20d2dc9579b3 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -803,7 +803,7 @@ public abstract class EntityLiving extends Entity {
+                         }
+ 
+                         this.aw = (float) (MathHelper.b(d1, d0) * 180.0D / 3.1415927410125732D - (double) this.yaw);
+-                        this.a(entity, f, d0, d1);
++                        this.a(entity, f, d0, d1, damagesource);
+                     } else {
+                         this.aw = (float) ((int) (Math.random() * 2.0D) * 180);
+                     }
+@@ -895,27 +895,92 @@ public abstract class EntityLiving extends Entity {
+     protected void dropEquipment(boolean flag, int i) {}
+ 
+     public void a(Entity entity, float f, double d0, double d1) {
+-        if (this.random.nextDouble() >= this.getAttributeInstance(GenericAttributes.c).getValue()) {
+-            this.ai = true;
+-            // PandaSpigot start - Configurable knockback
+-            com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig.KnockbackConfig knockbackConfig = entity.world.pandaSpigotConfig.knockback;
+-            double magnitude = MathHelper.sqrt(d0 * d0 + d1 * d1);
+-    
+-            double friction = knockbackConfig.friction;
++        this.a(entity, f, d0, d1, null);
++    }
++
++    public void a(Entity entity, float f, double d0, double d1, DamageSource damagesource) {
++        com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.WorldConfig displacementConfig =
++                com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.getWorldConfig(this.world);
++        com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.Profile profile =
++                displacementConfig.getProfile(entity, damagesource, this);
++        com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig.KnockbackConfig knockbackConfig =
++                this.world.pandaSpigotConfig.knockback;
++
++        if (displacementConfig.isVanilla()) {
++            if (this.random.nextDouble() >= this.getAttributeInstance(GenericAttributes.c).getValue()) {
++                this.ai = true;
++                float magnitude = MathHelper.sqrt(d0 * d0 + d1 * d1);
++                float strength = 0.4F;
++
++                this.motX /= 2.0D;
++                this.motY /= 2.0D;
++                this.motZ /= 2.0D;
++                this.motX -= d0 / (double) magnitude * (double) strength;
++                this.motY += (double) strength;
++                this.motZ -= d1 / (double) magnitude * (double) strength;
++                if (this.motY > 0.4000000059604645D) {
++                    this.motY = 0.4000000059604645D;
++                }
++            }
++            return;
++        }
++
++        double magnitude = MathHelper.sqrt(d0 * d0 + d1 * d1);
++        if (magnitude < 1.0E-4D) {
++            return;
++        }
++
++        double resistance = this.getAttributeInstance(GenericAttributes.c).getValue()
++                * displacementConfig.resistanceMultiplier * profile.resistanceMultiplier;
++        resistance = Math.max(0.0D, Math.min(1.0D, resistance));
++        if (this.random.nextDouble() < resistance) {
++            return;
++        }
++
++        boolean grounded = this.onGround;
++        if (grounded ? !displacementConfig.groundKnockbackEnabled : !displacementConfig.airKnockbackEnabled) {
++            return;
++        }
++
++        this.ai = true;
++        if (!displacementConfig.stackVelocity || displacementConfig.resetHorizontalVelocity) {
++            this.motX = 0.0D;
++            this.motZ = 0.0D;
++        }
++        if (!displacementConfig.stackVelocity || displacementConfig.resetVerticalVelocity) {
++            this.motY = 0.0D;
++        }
++
++        double friction = Math.max(0.1D, knockbackConfig.friction * profile.frictionMultiplier);
++        if (displacementConfig.stackVelocity) {
+             this.motX /= friction;
+             this.motY /= friction;
+             this.motZ /= friction;
+-    
+-            this.motX -= d0 / magnitude * knockbackConfig.horizontal;
+-            this.motY += knockbackConfig.vertical;
+-            this.motZ -= d1 / magnitude * knockbackConfig.horizontal;
+-    
+-            if (this.motY > knockbackConfig.verticalLimit) {
+-                this.motY = knockbackConfig.verticalLimit;
+-            }
+-            // PandaSpigot end
++        }
+ 
++        double horizontalMultiplier = grounded
++                ? displacementConfig.groundHorizontalMultiplier
++                : displacementConfig.airHorizontalMultiplier;
++        double verticalMultiplier = grounded
++                ? displacementConfig.groundVerticalMultiplier
++                : displacementConfig.airVerticalMultiplier;
++        double horizontal = knockbackConfig.horizontal * profile.horizontalMultiplier * horizontalMultiplier;
++        double vertical = knockbackConfig.vertical * profile.verticalMultiplier * verticalMultiplier;
++
++        this.motX -= d0 / magnitude * horizontal;
++        this.motY += vertical;
++        this.motZ -= d1 / magnitude * horizontal;
++        this.motX *= profile.horizontalDragMultiplier;
++        this.motY *= profile.verticalDragMultiplier;
++        this.motZ *= profile.horizontalDragMultiplier;
++
++        if (this.motY > 0.0D && displacementConfig.pullDown > 0.0D) {
++            this.motY = Math.max(0.0D, this.motY - displacementConfig.pullDown);
+         }
++
++        double verticalLimit = knockbackConfig.verticalLimit * profile.verticalLimitMultiplier;
++        double verticalMinimum = Math.min(displacementConfig.verticalVelocityMinimum, verticalLimit);
++        this.motY = Math.max(verticalMinimum, Math.min(verticalLimit, this.motY));
+     }
+ 
+     protected String bo() {

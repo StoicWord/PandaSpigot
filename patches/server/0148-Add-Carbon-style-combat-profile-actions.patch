@@ -1,0 +1,581 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 11:19:53 +0000
+Subject: [PATCH] Add Carbon-style combat profile actions
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 5fd93af71de1c39690c5335b94b9cb2b62af14d1..cb7d161a324677b54a3a89816ceb35dc32f636d3 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -66,6 +66,13 @@ fun TaskContainer.registerRunTask(
+ }
+ 
+ tasks {
++    processResources {
++        from(rootProject.file("third_party/spark/spark-bukkit-1.0.jar")) {
++            into("META-INF/titanium")
++            rename { "spark-bukkit-1.0.jar" }
++        }
++    }
++
+     shadowJar {
+         archiveClassifier.set("unmapped")
+ 
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index e6d82a73a23bc9afcd1c67344f60a9a7bebbcc0b..c29b862fc8b0e310681300bdeadfe75b8053ec26 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -14,6 +14,8 @@ import org.spongepowered.configurate.util.MapFactories;
+ import org.spongepowered.configurate.util.NamingSchemes;
+ 
+ import java.io.File;
++import java.io.IOException;
++import java.nio.file.Files;
+ import java.util.HashMap;
+ import java.util.Map;
+ 
+@@ -75,7 +77,18 @@ public class PandaSpigotConfig {
+                 }
+                 entry.getValue().knockback.validate(entry.getKey());
+             }
+-            PandaSpigotKnockbackConfig.init(new File(file.getParentFile(), "kbdisplacement.yml"));
++            File combatFolder = new File(file.getParentFile(), "titanium/combat");
++            if (!combatFolder.isDirectory() && !combatFolder.mkdirs()) {
++                throw new IOException("Could not create Titanium combat config directory: " + combatFolder);
++            }
++            File knockbackFile = new File(combatFolder, "kbdisplacement.yml");
++            File legacyKnockbackFile = new File(file.getParentFile(), "kbdisplacement.yml");
++            if (!knockbackFile.isFile() && legacyKnockbackFile.isFile()) {
++                Files.copy(legacyKnockbackFile.toPath(), knockbackFile.toPath());
++                Bukkit.getLogger().info("Copied legacy kbdisplacement.yml to " + knockbackFile
++                        + "; the original file was retained as a backup.");
++            }
++            PandaSpigotKnockbackConfig.init(knockbackFile);
+         } catch (Exception e) {
+             throw Throwables.propagate(e);
+         }
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java
+index 95a8cd4dc13857d7f81cd175c9cfe41de92afcb7..27066ed951721ad8bab26e26f60636b8a67a5ad9 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotKnockbackConfig.java
+@@ -268,6 +268,12 @@ public final class PandaSpigotKnockbackConfig {
+             case "requiressprint":
+                 config.requiresSprint = parseBoolean(path, value);
+                 break;
++            case "resetsprint":
++                config.resetSprint = parseBoolean(path, value);
++                break;
++            case "nodamageticks":
++                config.noDamageTicks = parseInteger(path, value);
++                break;
+             case "pulldown":
+                 config.pullDown = parseDouble(path, value);
+                 break;
+@@ -387,6 +393,14 @@ public final class PandaSpigotKnockbackConfig {
+         }
+     }
+ 
++    private static int parseInteger(String path, String value) {
++        try {
++            return Integer.parseInt(value);
++        } catch (NumberFormatException e) {
++            throw new IllegalArgumentException("Setting '" + path + "' must be an integer.", e);
++        }
++    }
++
+     private static boolean parseBoolean(String path, String value) {
+         if ("true".equalsIgnoreCase(value)) return true;
+         if ("false".equalsIgnoreCase(value)) return false;
+@@ -411,6 +425,8 @@ public final class PandaSpigotKnockbackConfig {
+         WorldConfig copy = new WorldConfig();
+         copy.mode = source.mode;
+         copy.requiresSprint = source.requiresSprint;
++        copy.resetSprint = source.resetSprint;
++        copy.noDamageTicks = source.noDamageTicks;
+         copy.pullDown = source.pullDown;
+         copy.verticalVelocityMinimum = source.verticalVelocityMinimum;
+         copy.resistanceMultiplier = source.resistanceMultiplier;
+@@ -461,6 +477,12 @@ public final class PandaSpigotKnockbackConfig {
+         @Comment("When true, CUSTOM values are used only when the attacker is sprinting; otherwise VANILLA behavior is used.")
+         public Boolean requiresSprint;
+ 
++        @Comment("Reset the attacker's sprint after a sprint hit.")
++        public Boolean resetSprint;
++
++        @Comment("Player invulnerability window after taking damage, in ticks. 20 is the vanilla value.")
++        public Integer noDamageTicks;
++
+         @Comment("Extra downward impulse applied to positive vertical velocity on impact. Set to 0 to use vanilla gravity only.")
+         public Double pullDown;
+ 
+@@ -504,6 +526,8 @@ public final class PandaSpigotKnockbackConfig {
+             WorldConfig config = new WorldConfig();
+             config.mode = "CUSTOM";
+             config.requiresSprint = false;
++            config.resetSprint = true;
++            config.noDamageTicks = 20;
+             config.pullDown = 0.0D;
+             config.verticalVelocityMinimum = -1.0D;
+             config.resistanceMultiplier = 1.0D;
+@@ -533,6 +557,8 @@ public final class PandaSpigotKnockbackConfig {
+         private void inheritMissing(WorldConfig fallback) {
+             if (this.mode == null) this.mode = fallback.mode;
+             if (this.requiresSprint == null) this.requiresSprint = fallback.requiresSprint;
++            if (this.resetSprint == null) this.resetSprint = fallback.resetSprint;
++            if (this.noDamageTicks == null) this.noDamageTicks = fallback.noDamageTicks;
+             if (this.pullDown == null) this.pullDown = fallback.pullDown;
+             if (this.verticalVelocityMinimum == null) this.verticalVelocityMinimum = fallback.verticalVelocityMinimum;
+             if (this.resistanceMultiplier == null) this.resistanceMultiplier = fallback.resistanceMultiplier;
+@@ -627,6 +653,7 @@ public final class PandaSpigotKnockbackConfig {
+             }
+ 
+             this.pullDown = clamp(this.pullDown, 0.0D, 1.0D, 0.0D, worldName, "pullDown");
++            this.noDamageTicks = clamp(this.noDamageTicks, 0, 40, 20, worldName, "noDamageTicks");
+             this.verticalVelocityMinimum = clamp(this.verticalVelocityMinimum, -4.0D, 0.0D, -1.0D, worldName, "verticalVelocityMinimum");
+             this.resistanceMultiplier = clamp(this.resistanceMultiplier, 0.0D, 4.0D, 1.0D, worldName, "resistanceMultiplier");
+             this.attackerSlowdown = clamp(this.attackerSlowdown, 0.0D, 1.0D, 0.6D, worldName, "attackerSlowdown");
+@@ -667,6 +694,20 @@ public final class PandaSpigotKnockbackConfig {
+             return profile;
+         }
+ 
++        private static int clamp(Integer value, int minimum, int maximum, int fallback, String worldName, String setting) {
++            if (value == null) {
++                Bukkit.getLogger().warning("Missing knockback setting '" + setting + "' for world '" + worldName
++                        + "'; using " + fallback + ".");
++                return fallback;
++            }
++            int clamped = Math.max(minimum, Math.min(maximum, value));
++            if (clamped != value) {
++                Bukkit.getLogger().warning("Knockback setting '" + setting + "' for world '" + worldName
++                        + "' is outside the supported range; clamped to " + clamped + ".");
++            }
++            return clamped;
++        }
++
+         private static double clamp(double value, double minimum, double maximum, double fallback, String worldName, String setting) {
+             if (Double.isNaN(value) || Double.isInfinite(value)) {
+                 Bukkit.getLogger().warning("Invalid knockback value '" + setting + "' for world '" + worldName + "'; using " + fallback + ".");
+diff --git a/src/main/java/net/minecraft/server/EntityHuman.java b/src/main/java/net/minecraft/server/EntityHuman.java
+index 04e3daa5af596fef01bdc1ed8626ec0563baf462..64e345ad171b7297663cf095c02cd7e3c703a817 100644
+--- a/src/main/java/net/minecraft/server/EntityHuman.java
++++ b/src/main/java/net/minecraft/server/EntityHuman.java
+@@ -1033,7 +1033,9 @@ public abstract class EntityHuman extends EntityLiving {
+                                     MathHelper.cos(this.yaw * 3.1415927F / 180.0F) * (float) i * extraHorizontal);
+                             this.motX *= attackerSlowdown;
+                             this.motZ *= attackerSlowdown;
+-                            this.setSprinting(false);
++                            if (displacementConfig.resetSprint) {
++                                this.setSprinting(false);
++                            }
+                         }
+ 
+                         if (entity instanceof EntityPlayer && entity.velocityChanged) {
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index 0e6cb8324878d8a6b272fad011a6a0010492d093..747d4a897991cbad9bca3b0325582097fc19e6ac 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -714,6 +714,11 @@ public abstract class EntityLiving extends Entity {
+         } else if (this.world.isClientSide) {
+             return false;
+         } else {
++            if (this instanceof EntityHuman) {
++                com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.WorldConfig combatConfig =
++                        com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig.getWorldConfig(this.world);
++                this.maxNoDamageTicks = combatConfig.noDamageTicks;
++            }
+             this.ticksFarFromPlayer = 0;
+             if (this.getHealth() <= 0.0F) {
+                 return false;
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 8efb14df8884dac61a61996501fa57d6612295e6..9dfb43cb738feb9c6fda1cf4da5b185ecbd058e8 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1229,7 +1229,7 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+     }
+ 
+     public String getServerModName() {
+-        return "Titanium 1.0"; // Titanium - PandaSpigot > // PaperSpigot - PaperSpigot > // Spigot - Spigot > // CraftBukkit - cb > vanilla!
++        return "Titanium"; // Titanium - PandaSpigot > // PaperSpigot - PaperSpigot > // Spigot - Spigot > // CraftBukkit - cb > vanilla!
+     }
+ 
+     public CrashReport b(CrashReport crashreport) {
+diff --git a/src/main/java/org/spigotmc/TitaniumCommands.java b/src/main/java/org/spigotmc/TitaniumCommands.java
+index e59990e17e822fd5bd4ee7f1d231111a84f4bdeb..2343d8c2f291a127c5d25297173669580645563e 100644
+--- a/src/main/java/org/spigotmc/TitaniumCommands.java
++++ b/src/main/java/org/spigotmc/TitaniumCommands.java
+@@ -1,6 +1,8 @@
+ package org.spigotmc;
+ 
+ import com.hpfxd.pandaspigot.config.PandaSpigotKnockbackConfig;
++import com.hpfxd.pandaspigot.config.PandaSpigotConfig;
++import com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig;
+ import net.minecraft.server.MinecraftServer;
+ import org.bukkit.Bukkit;
+ import org.bukkit.ChatColor;
+@@ -22,7 +24,8 @@ import net.md_5.bungee.api.chat.TextComponent;
+ 
+ import java.io.File;
+ import java.io.IOException;
+-import java.util.Arrays;
++import java.io.InputStream;
++import java.nio.file.Files;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.logging.Level;
+@@ -40,16 +43,42 @@ public final class TitaniumCommands {
+ 
+         MinecraftServer.getServer().server.getCommandMap().register("Titanium", new AboutCommand());
+         if (TitaniumSettings.isCommandEnabled("commands.knockback.enabled")) {
+-            MinecraftServer.getServer().server.getCommandMap().register("Titanium", new KnockbackCommand());
++            MinecraftServer.getServer().server.getCommandMap().register("Titanium", new KnockbackCommand("kb", false));
++            MinecraftServer.getServer().server.getCommandMap().register("Titanium", new KnockbackCommand("combat", true));
+         }
+         if (TitaniumSettings.isCommandEnabled("commands.plugin-manager.enabled")) {
+             MinecraftServer.getServer().server.getCommandMap().register("Titanium", new PluginManagerCommand());
+         }
+         if (TitaniumSettings.isCommandEnabled("commands.spark-alias.enabled")) {
++            installBundledSpark();
+             MinecraftServer.getServer().server.getCommandMap().register("Titanium", new SparkAliasCommand());
+         }
+     }
+ 
++    private static void installBundledSpark() {
++        File pluginsFolder = Bukkit.getPluginsFolder();
++        File sparkJar = new File(pluginsFolder, "spark.jar");
++        if (sparkJar.isFile()) {
++            return;
++        }
++        if (!pluginsFolder.isDirectory() && !pluginsFolder.mkdirs()) {
++            Bukkit.getLogger().severe("Could not create plugins directory for bundled Spark: " + pluginsFolder);
++            return;
++        }
++
++        try (InputStream input = TitaniumCommands.class.getResourceAsStream(
++                "/META-INF/titanium/spark-bukkit-1.0.jar")) {
++            if (input == null) {
++                Bukkit.getLogger().severe("Bundled Spark resource is missing; /spark will be unavailable.");
++                return;
++            }
++            Files.copy(input, sparkJar.toPath());
++            Bukkit.getLogger().info("Installed bundled Spark to " + sparkJar + ".");
++        } catch (IOException e) {
++            Bukkit.getLogger().log(Level.SEVERE, "Could not install bundled Spark to " + sparkJar + ".", e);
++        }
++    }
++
+     private static void registerPermission(String name) {
+         if (Bukkit.getPluginManager().getPermission(name) == null) {
+             Bukkit.getPluginManager().addPermission(new Permission(name, PermissionDefault.OP));
+@@ -97,11 +126,14 @@ public final class TitaniumCommands {
+     }
+ 
+     private static final class KnockbackCommand extends Command {
+-        private KnockbackCommand() {
+-            super("kb");
+-            this.description = "Manage Titanium knockback profiles";
+-            this.usageMessage = "/kb <help|list|view|create|set|setdefault|world|remove|save|reload>";
+-            this.setAliases(Arrays.asList("combat"));
++        private final boolean combatCommand;
++
++        private KnockbackCommand(String name, boolean combatCommand) {
++            super(name);
++            this.combatCommand = combatCommand;
++            this.description = combatCommand ? "Manage Titanium combat profiles" : "View active knockback values";
++            this.usageMessage = combatCommand ? "/combat <help|list|create|edit|set|view|remove|save|reload>"
++                    : "/kb [getdefault|view <profile>]";
+             this.setPermission(KNOCKBACK_PERMISSION);
+         }
+ 
+@@ -112,7 +144,11 @@ public final class TitaniumCommands {
+             }
+             try {
+                 if (args.length == 0) {
+-                    showActiveProfile(sender);
++                    if (this.combatCommand) {
++                        showHelp(sender);
++                    } else {
++                        showActiveProfile(sender);
++                    }
+                     return true;
+                 }
+ 
+@@ -127,36 +163,67 @@ public final class TitaniumCommands {
+                         listProfiles(sender);
+                         break;
+                     case "view":
+-                        if (args.length != 2) throw new IllegalArgumentException("Usage: /kb view <profile>");
++                        if (args.length != 2) throw new IllegalArgumentException(this.usage("view <profile>"));
+                         showProfile(sender, args[1]);
+                         break;
++                    case "edit":
++                        if (args.length == 1) {
++                            showActiveProfile(sender);
++                        } else if (args.length == 2) {
++                            showProfile(sender, args[1]);
++                        } else {
++                            throw new IllegalArgumentException(this.usage("edit [profile]"));
++                        }
++                        break;
++                    case "viewprojectile":
++                        if (args.length != 3) {
++                            throw new IllegalArgumentException(this.usage("viewProjectile <profile> <type>"));
++                        }
++                        showProjectileProfile(sender, args[1], args[2]);
++                        break;
+                     case "create":
+                         if (args.length < 2 || args.length > 3) {
+-                            throw new IllegalArgumentException("Usage: /kb create <name> [base-profile]");
++                            throw new IllegalArgumentException(this.usage("create <name> <custom|vanilla|base-profile>"));
++                        }
++                        String type = args.length == 3 ? args[2] : "custom";
++                        if ("custom".equalsIgnoreCase(type) || "vanilla".equalsIgnoreCase(type)) {
++                            PandaSpigotKnockbackConfig.createProfile(args[1], null);
++                            PandaSpigotKnockbackConfig.setProfileValue(args[1], "mode", type);
++                        } else {
++                            PandaSpigotKnockbackConfig.createProfile(args[1],
++                                    "default".equalsIgnoreCase(type) ? null : type);
+                         }
+-                        PandaSpigotKnockbackConfig.createProfile(args[1], args.length == 3 ? args[2] : null);
+                         success(sender, "Created knockback profile '" + args[1] + "'.");
+                         break;
+                     case "set":
+-                        if (args.length != 4) {
+-                            throw new IllegalArgumentException("Usage: /kb set <profile> <setting> <value>");
++                        if (args.length == 2) {
++                            String worldName = currentWorldName(sender);
++                            if (worldName == null) {
++                                throw new IllegalArgumentException("From console, use /combat world <world> <profile>.");
++                            }
++                            PandaSpigotKnockbackConfig.setWorldProfile(worldName, args[1]);
++                            success(sender, "Applied profile '" + args[1] + "' to world '" + worldName + "'.");
++                        } else if (args.length == 4) {
++                            PandaSpigotKnockbackConfig.setProfileValue(args[1], args[2], args[3]);
++                            success(sender, "Updated " + args[1] + "." + args[2] + " to " + args[3] + ".");
++                            showProfile(sender, args[1]);
++                        } else {
++                            throw new IllegalArgumentException(
++                                    this.usage("set <profile> or set <profile> <setting> <value>"));
+                         }
+-                        PandaSpigotKnockbackConfig.setProfileValue(args[1], args[2], args[3]);
+-                        success(sender, "Updated " + args[1] + "." + args[2] + " to " + args[3] + ".");
+-                        showProfile(sender, args[1]);
+                         break;
+                     case "setdefault":
+-                        if (args.length != 2) throw new IllegalArgumentException("Usage: /kb setdefault <profile>");
++                        if (args.length != 2) throw new IllegalArgumentException(this.usage("setdefault <profile>"));
+                         PandaSpigotKnockbackConfig.setWorldProfile("default", args[1]);
+                         success(sender, "Set the default knockback profile to '" + args[1] + "'.");
+                         break;
+                     case "world":
+-                        if (args.length != 3) throw new IllegalArgumentException("Usage: /kb world <world> <profile>");
++                        if (args.length != 3) throw new IllegalArgumentException(this.usage("world <world> <profile>"));
+                         PandaSpigotKnockbackConfig.setWorldProfile(args[1], args[2]);
+                         success(sender, "Assigned profile '" + args[2] + "' to world '" + args[1] + "'.");
+                         break;
+                     case "remove":
+-                        if (args.length != 2) throw new IllegalArgumentException("Usage: /kb remove <profile>");
++                        if (args.length != 2) throw new IllegalArgumentException(this.usage("remove <profile>"));
+                         PandaSpigotKnockbackConfig.removeProfile(args[1]);
+                         success(sender, "Removed knockback profile '" + args[1] + "'.");
+                         break;
+@@ -180,8 +247,15 @@ public final class TitaniumCommands {
+             return true;
+         }
+ 
++        private String usage(String syntax) {
++            return "Usage: /" + (this.combatCommand ? "combat " : "kb ") + syntax;
++        }
++
+         private static void showActiveProfile(CommandSender sender) {
+-            String worldName = sender instanceof Player ? ((Player) sender).getWorld().getName() : "default";
++            String worldName = currentWorldName(sender);
++            if (worldName == null) {
++                worldName = "default";
++            }
+             sender.sendMessage(TitaniumSettings.color("theme.secondary") + "World: "
+                     + TitaniumSettings.color("theme.primary") + worldName);
+             showProfile(sender, PandaSpigotKnockbackConfig.getWorldProfileName(worldName));
+@@ -190,23 +264,60 @@ public final class TitaniumCommands {
+         private static void showHelp(CommandSender sender) {
+             String primary = TitaniumSettings.color("theme.primary");
+             String secondary = TitaniumSettings.color("theme.secondary");
+-            sender.sendMessage(primary + "Titanium Knockback");
+-            sender.sendMessage(secondary + "/kb or /kb getdefault " + primary + "- view active/default profile");
+-            sender.sendMessage(secondary + "/kb list, view <profile>, create <name> [base]");
+-            sender.sendMessage(secondary + "/kb set <profile> <setting> <value> " + primary + "- click values to suggest edits");
+-            sender.sendMessage(secondary + "/kb setdefault <profile> | world <world> <profile>");
+-            sender.sendMessage(secondary + "/kb remove <profile> | save | reload");
++            sender.sendMessage(primary + "Titanium Combat Help");
++            sender.sendMessage(secondary + "Sprint required: " + primary + "true"
++                    + secondary + " = sprint hits only; " + primary + "false" + secondary + " = optional");
++            sendHelpLine(sender, "/combat list", "View available combat profiles");
++            sendHelpLine(sender, "/combat create <name> <type>", "Create a custom, vanilla, or copied profile");
++            sendHelpLine(sender, "/combat edit [profile]", "Edit profile values; click a value to suggest a change");
++            sendHelpLine(sender, "/combat remove <profile>", "Remove an unassigned profile");
++            sendHelpLine(sender, "/combat set <profile>", "Apply a profile to this world's players");
++            sendHelpLine(sender, "/combat view <profile>", "View all profile settings");
++            sendHelpLine(sender, "/combat viewProjectile <profile> <type>", "View projectile impact settings");
++            sendHelpLine(sender, "/combat setdefault <profile>", "Choose the fallback profile");
++            sendHelpLine(sender, "/combat world <world> <profile>", "Assign a profile to a world");
++            sendHelpLine(sender, "/combat save | reload", "Save or reload kbdisplacement.yml");
++            sender.sendMessage(secondary + "Use " + primary + "/kb" + secondary + " to view the active world's values.");
++        }
++
++        private static void sendHelpLine(CommandSender sender, String command, String description) {
++            String primary = TitaniumSettings.color("theme.primary");
++            String secondary = TitaniumSettings.color("theme.secondary");
++            TextComponent row = new TextComponent(secondary + "▪ " + primary + command + secondary + " - " + description);
++            row.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command));
++            row.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
++                    new ComponentBuilder(secondary + description).create()));
++            sendComponent(sender, row);
++        }
++
++        private static String currentWorldName(CommandSender sender) {
++            return sender instanceof Player ? ((Player) sender).getWorld().getName() : null;
+         }
+ 
+         private static void listProfiles(CommandSender sender) {
+             String primary = TitaniumSettings.color("theme.primary");
+             String secondary = TitaniumSettings.color("theme.secondary");
+-            sender.sendMessage(primary + "Knockback profiles:");
++            String worldName = currentWorldName(sender);
++            if (worldName == null) {
++                worldName = "default";
++            }
++            String activeProfile = PandaSpigotKnockbackConfig.getWorldProfileName(worldName);
++            sender.sendMessage(primary + "Combat profiles " + secondary + "(world: " + worldName + "):");
+             for (String profile : PandaSpigotKnockbackConfig.getProfileNames()) {
+-                TextComponent row = new TextComponent(secondary + " - " + primary + profile);
+-                row.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/kb view " + profile));
++                PandaSpigotKnockbackConfig.WorldConfig config = PandaSpigotKnockbackConfig.getProfile(profile);
++                String activeMarker = profile.equals(activeProfile) ? primary + " * " : secondary + " - ";
++                TextComponent row = new TextComponent(activeMarker + primary + profile + secondary
++                        + " (" + config.mode + ", requiresSprint=" + config.requiresSprint + ")");
++                row.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/combat view " + profile));
+                 row.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                         new ComponentBuilder(secondary + "Click to view and edit this profile").create()));
++                if (sender instanceof Player) {
++                    TextComponent apply = new TextComponent(primary + " [apply]");
++                    apply.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/combat set " + profile));
++                    apply.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
++                            new ComponentBuilder(secondary + "Apply this profile to " + worldName).create()));
++                    row.addExtra(apply);
++                }
+                 sendComponent(sender, row);
+             }
+         }
+@@ -220,8 +331,19 @@ public final class TitaniumCommands {
+             String primary = TitaniumSettings.color("theme.primary");
+             String secondary = TitaniumSettings.color("theme.secondary");
+             sender.sendMessage(primary + "Titanium Knockback " + secondary + "- " + primary + profile);
++            String worldName = currentWorldName(sender);
++            if (worldName == null) {
++                worldName = "default";
++            }
++            PandaSpigotWorldConfig.KnockbackConfig base = PandaSpigotConfig.getWorldConfig(worldName).knockback;
++            sender.sendMessage(secondary + "Base pandaspigot.yml values: " + primary
++                    + "F=" + base.friction + " H=" + base.horizontal + " V=" + base.vertical
++                    + " VL=" + base.verticalLimit + " ExtraH=" + base.extraHorizontal
++                    + " ExtraV=" + base.extraVertical);
+             sendEditable(sender, profile, "mode", "Mode", config.mode);
+             sendEditable(sender, profile, "requiresSprint", "Requires sprint", config.requiresSprint);
++            sendEditable(sender, profile, "resetSprint", "Reset sprint", config.resetSprint);
++            sendEditable(sender, profile, "noDamageTicks", "No-damage ticks", config.noDamageTicks);
+             sendEditable(sender, profile, "pullDown", "Pull-down", config.pullDown);
+             sendEditable(sender, profile, "verticalVelocityMinimum", "Minimum vertical velocity", config.verticalVelocityMinimum);
+             sendEditable(sender, profile, "resistanceMultiplier", "Resistance", config.resistanceMultiplier);
+@@ -247,6 +369,55 @@ public final class TitaniumCommands {
+             sendDamageProfile(sender, profile, "other", "Other damage", config.other);
+         }
+ 
++        private static void showProjectileProfile(CommandSender sender, String profileName, String type) {
++            PandaSpigotKnockbackConfig.WorldConfig config = PandaSpigotKnockbackConfig.getProfile(profileName);
++            if (config == null) {
++                throw new IllegalArgumentException("Unknown knockback profile '" + profileName + "'.");
++            }
++            String normalized = type.toLowerCase(Locale.ROOT).replace("-", "").replace("_", "");
++            String key;
++            String title;
++            PandaSpigotKnockbackConfig.Profile projectile;
++            switch (normalized) {
++                case "arrow":
++                case "arrows":
++                    key = "arrows";
++                    title = "Arrows";
++                    projectile = config.arrows;
++                    break;
++                case "snowball":
++                case "snowballs":
++                    key = "snowballs";
++                    title = "Snowballs";
++                    projectile = config.snowballs;
++                    break;
++                case "egg":
++                case "eggs":
++                    key = "eggs";
++                    title = "Eggs";
++                    projectile = config.eggs;
++                    break;
++                case "rod":
++                case "fishinghook":
++                case "fishinghooks":
++                    key = "fishingHooks";
++                    title = "Fishing hooks";
++                    projectile = config.fishingHooks;
++                    break;
++                case "enderpearl":
++                case "enderpearls":
++                    key = "enderPearls";
++                    title = "Ender pearls";
++                    projectile = config.enderPearls;
++                    break;
++                default:
++                    throw new IllegalArgumentException("Projectile type must be arrow, snowball, egg, rod, or enderpearl.");
++            }
++            sender.sendMessage(TitaniumSettings.color("theme.primary") + "Projectile impact "
++                    + TitaniumSettings.color("theme.secondary") + "- " + title);
++            sendDamageProfile(sender, profileName.toLowerCase(Locale.ROOT), key, title, projectile);
++        }
++
+         private static void sendDamageProfile(CommandSender sender, String profileName, String key, String title,
+                                               PandaSpigotKnockbackConfig.Profile profile) {
+             String secondary = TitaniumSettings.color("theme.secondary");
+@@ -267,7 +438,7 @@ public final class TitaniumCommands {
+         private static void sendEditable(CommandSender sender, String profile, String key, String title, Object value) {
+             String secondary = TitaniumSettings.color("theme.secondary");
+             String primary = TitaniumSettings.color("theme.primary");
+-            String command = "/kb set " + profile + " " + key + " " + value;
++            String command = "/combat set " + profile + " " + key + " " + value;
+             TextComponent row = new TextComponent(secondary + title + ": " + primary + value);
+             row.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command));
+             row.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+@@ -280,7 +451,7 @@ public final class TitaniumCommands {
+             String primary = TitaniumSettings.color("theme.primary");
+             TextComponent separator = new TextComponent(secondary + " | ");
+             TextComponent field = new TextComponent(primary + label + "=" + value);
+-            String command = "/kb set " + profile + " " + key + " " + value;
++            String command = "/combat set " + profile + " " + key + " " + value;
+             field.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command));
+             field.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                     new ComponentBuilder(secondary + "Click to edit\n" + primary + command).create()));
+@@ -302,8 +473,16 @@ public final class TitaniumCommands {
+ 
+         @Override
+         public boolean execute(CommandSender sender, String label, String[] args) {
++            Plugin spark = Bukkit.getPluginManager().getPlugin("spark");
++            if (spark == null || !spark.isEnabled()) {
++                sender.sendMessage(ChatColor.RED + "Spark is not loaded. Check plugins/spark.jar and restart the server.");
++                return true;
++            }
+             String command = "profiler" + (args.length == 0 ? "" : " " + String.join(" ", args));
+-            return Bukkit.dispatchCommand(sender, command);
++            if (!Bukkit.dispatchCommand(sender, command)) {
++                sender.sendMessage(ChatColor.RED + "Spark's /profiler command is unavailable; check the server log.");
++            }
++            return true;
+         }
+     }
+ 

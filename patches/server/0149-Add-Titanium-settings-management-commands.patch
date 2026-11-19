@@ -1,0 +1,187 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 11:51:26 +0000
+Subject: [PATCH] Add Titanium settings management commands
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/org/spigotmc/TitaniumCommands.java b/src/main/java/org/spigotmc/TitaniumCommands.java
+index 2343d8c2f291a127c5d25297173669580645563e..0bebf87707b0e3871a7205ae86b74b545d31f07c 100644
+--- a/src/main/java/org/spigotmc/TitaniumCommands.java
++++ b/src/main/java/org/spigotmc/TitaniumCommands.java
+@@ -33,6 +33,7 @@ import java.util.logging.Level;
+ public final class TitaniumCommands {
+     private static final String KNOCKBACK_PERMISSION = "titanium.knockback.view";
+     private static final String PLUGIN_PERMISSION = "titanium.plugin.manage";
++    private static final String SETTINGS_PERMISSION = "titanium.settings.manage";
+ 
+     private TitaniumCommands() {}
+ 
+@@ -40,6 +41,7 @@ public final class TitaniumCommands {
+         TitaniumSettings.init(MinecraftServer.getServer().server.getWorldContainer());
+         registerPermission(KNOCKBACK_PERMISSION);
+         registerPermission(PLUGIN_PERMISSION);
++        registerPermission(SETTINGS_PERMISSION);
+ 
+         MinecraftServer.getServer().server.getCommandMap().register("Titanium", new AboutCommand());
+         if (TitaniumSettings.isCommandEnabled("commands.knockback.enabled")) {
+@@ -88,12 +90,77 @@ public final class TitaniumCommands {
+     private static final class AboutCommand extends Command {
+         private AboutCommand() {
+             super("titanium");
+-            this.description = "Shows Titanium server information";
+-            this.usageMessage = "/titanium";
++            this.description = "Shows Titanium information and settings commands";
++            this.usageMessage = "/titanium [help|save|reload|theme]";
+         }
+ 
+         @Override
+         public boolean execute(CommandSender sender, String label, String[] args) {
++            if (args.length > 0) {
++                switch (args[0].toLowerCase(Locale.ROOT)) {
++                    case "help":
++                        if (args.length != 1) {
++                            sender.sendMessage(ChatColor.RED + "Usage: /titanium help");
++                            return true;
++                        }
++                        showInformation(sender);
++                        return true;
++                    case "save":
++                        if (args.length != 1) {
++                            sender.sendMessage(ChatColor.RED + "Usage: /titanium save");
++                            return true;
++                        }
++                        if (!requireSettingsPermission(sender)) return true;
++                        runSettingsAction(sender, "save", () -> {
++                            TitaniumSettings.save();
++                            PandaSpigotKnockbackConfig.save();
++                        });
++                        return true;
++                    case "reload":
++                        if (args.length != 1) {
++                            sender.sendMessage(ChatColor.RED + "Usage: /titanium reload");
++                            return true;
++                        }
++                        if (!requireSettingsPermission(sender)) return true;
++                        runSettingsAction(sender, "reload", () -> {
++                            TitaniumSettings.init(MinecraftServer.getServer().server.getWorldContainer());
++                            PandaSpigotKnockbackConfig.reload();
++                        });
++                        return true;
++                    case "theme":
++                        if (args.length == 1) {
++                            sender.sendMessage(TitaniumSettings.color("theme.secondary") + "Theme: primary="
++                                    + TitaniumSettings.color("theme.primary") + "primary"
++                                    + TitaniumSettings.color("theme.secondary") + ", secondary="
++                                    + TitaniumSettings.color("theme.primary") + "secondary");
++                            return true;
++                        }
++                        if (args.length < 2 || args.length > 3) {
++                            sender.sendMessage(ChatColor.RED + "Usage: /titanium theme <primary> [secondary]");
++                            return true;
++                        }
++                        if (!requireSettingsPermission(sender)) return true;
++                        try {
++                            TitaniumSettings.setThemeColors(args[1], args.length == 3 ? args[2] : null);
++                            sender.sendMessage(TitaniumSettings.color("theme.primary") + "Updated Titanium theme.");
++                        } catch (IllegalArgumentException e) {
++                            sender.sendMessage(ChatColor.RED + e.getMessage());
++                        } catch (RuntimeException e) {
++                            Bukkit.getLogger().log(Level.SEVERE, "Could not update Titanium theme.", e);
++                            sender.sendMessage(ChatColor.RED + "Could not save Titanium settings. Check the server log.");
++                        }
++                        return true;
++                    default:
++                        sender.sendMessage(ChatColor.RED + "Usage: /titanium [help|save|reload|theme]");
++                        return true;
++                }
++            }
++
++            showInformation(sender);
++            return true;
++        }
++
++        private static void showInformation(CommandSender sender) {
+             String primary = TitaniumSettings.color("theme.primary");
+             String secondary = TitaniumSettings.color("theme.secondary");
+             sender.sendMessage(primary + TitaniumSettings.getBrandName() + " " + TitaniumSettings.getBrandVersion());
+@@ -111,7 +178,29 @@ public final class TitaniumCommands {
+             if (TitaniumSettings.isCommandEnabled("commands.plugin-manager.enabled")) {
+                 sendCommandLink(sender, "/plugin", "Manage plugin lifecycle");
+             }
+-            return true;
++            sendCommandLink(sender, "/titanium reload", "Reload Titanium settings and combat profiles");
++            sendCommandLink(sender, "/titanium save", "Save Titanium settings and combat profiles");
++            sendCommandLink(sender, "/titanium theme", "View or change the command theme");
++        }
++
++        private static boolean requireSettingsPermission(CommandSender sender) {
++            if (sender.hasPermission(SETTINGS_PERMISSION)) {
++                return true;
++            }
++            sender.sendMessage(ChatColor.RED + "You do not have permission to manage Titanium settings.");
++            return false;
++        }
++
++        private static void runSettingsAction(CommandSender sender, String action, Runnable operation) {
++            try {
++                operation.run();
++                String result = "save".equals(action) ? "saved" : "reloaded";
++                sender.sendMessage(TitaniumSettings.color("theme.primary") + "Titanium settings " + result + ".");
++            } catch (RuntimeException e) {
++                Bukkit.getLogger().log(Level.SEVERE, "Could not " + action + " Titanium settings.", e);
++                sender.sendMessage(ChatColor.RED + "Could not " + action
++                        + " Titanium settings. Check the server log.");
++            }
+         }
+ 
+         private static void sendCommandLink(CommandSender sender, String command, String description) {
+diff --git a/src/main/java/org/spigotmc/TitaniumSettings.java b/src/main/java/org/spigotmc/TitaniumSettings.java
+index 2a30145152c13d7b0bb2c3a16646a965f32d4311..00f91dcb717e82f93f0116902766058fc30c1c97 100644
+--- a/src/main/java/org/spigotmc/TitaniumSettings.java
++++ b/src/main/java/org/spigotmc/TitaniumSettings.java
+@@ -6,6 +6,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
+ 
+ import java.io.File;
+ import java.io.IOException;
++import java.util.Locale;
+ 
+ public final class TitaniumSettings {
+     private static File folder;
+@@ -77,6 +78,36 @@ public final class TitaniumSettings {
+         return config.getBoolean(path, true);
+     }
+ 
++    public static synchronized void setThemeColors(String primary, String secondary) {
++        validateColor("primary", primary);
++        if (secondary != null) {
++            validateColor("secondary", secondary);
++        }
++        config.set("theme.primary", primary.toLowerCase(Locale.ROOT));
++        if (secondary != null) {
++            config.set("theme.secondary", secondary.toLowerCase(Locale.ROOT));
++        }
++        save();
++    }
++
++    public static synchronized void save() {
++        if (folder == null || config == null) {
++            throw new IllegalStateException("Titanium settings have not been initialized.");
++        }
++        try {
++            config.save(new File(folder, "settings.yml"));
++        } catch (IOException e) {
++            throw new IllegalStateException("Could not save Titanium settings in " + folder, e);
++        }
++    }
++
++    private static void validateColor(String name, String value) {
++        if (value == null || value.length() != 2 || value.charAt(0) != '&'
++                || "0123456789abcdef".indexOf(Character.toLowerCase(value.charAt(1))) < 0) {
++            throw new IllegalArgumentException(name + " must be a legacy color code such as &d or &7.");
++        }
++    }
++
+     public static synchronized File getFolder() {
+         return folder;
+     }

@@ -19,7 +19,7 @@ import java.nio.file.Path;
 
 public final class Agent {
     public static void premain(final String agentArgs, final Instrumentation inst) {
-        // noop - if this is called on Java 8 we just ignore it
+        SwmClassModifier.configure(inst);
     }
 
     static void addToClassPath(final Path paperJar) {

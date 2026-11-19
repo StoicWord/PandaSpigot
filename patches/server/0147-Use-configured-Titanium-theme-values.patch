@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 10:24:55 +0000
+Subject: [PATCH] Use configured Titanium theme values
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/org/spigotmc/TitaniumSettings.java b/src/main/java/org/spigotmc/TitaniumSettings.java
+index 568052bbd17394d978458e0fef9d775265f1b7a0..2a30145152c13d7b0bb2c3a16646a965f32d4311 100644
+--- a/src/main/java/org/spigotmc/TitaniumSettings.java
++++ b/src/main/java/org/spigotmc/TitaniumSettings.java
+@@ -49,23 +49,28 @@ public final class TitaniumSettings {
+     }
+ 
+     public static synchronized String getBrandName() {
+-        return config.getString("brand.name", "Titanium");
++        return getString("brand.name", "Titanium");
+     }
+ 
+     public static synchronized String getBrandVersion() {
+-        return config.getString("brand.version", "1.0");
++        return getString("brand.version", "1.0");
+     }
+ 
+     public static synchronized String getBrandAuthor() {
+-        return config.getString("brand.author", "Hyouka Dev");
++        return getString("brand.author", "Hyouka Dev");
+     }
+ 
+     public static synchronized String getBrandDiscord() {
+-        return config.getString("brand.discord", "dsc.gg/hyoukadev");
++        return getString("brand.discord", "dsc.gg/hyoukadev");
+     }
+ 
+     public static synchronized String color(String path) {
+-        return ChatColor.translateAlternateColorCodes('&', config.getString(path, "&7"));
++        return ChatColor.translateAlternateColorCodes('&', getString(path, "&7"));
++    }
++
++    private static String getString(String path, String fallback) {
++        String value = config.getString(path);
++        return value == null ? fallback : value;
+     }
+ 
+     public static synchronized boolean isCommandEnabled(String path) {

@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 10:06:16 +0000
+Subject: [PATCH] Polish Titanium profile command output
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/org/spigotmc/TitaniumCommands.java b/src/main/java/org/spigotmc/TitaniumCommands.java
+index ca54aa50ab445804fa058eb8bafdf914501ba74e..e59990e17e822fd5bd4ee7f1d231111a84f4bdeb 100644
+--- a/src/main/java/org/spigotmc/TitaniumCommands.java
++++ b/src/main/java/org/spigotmc/TitaniumCommands.java
+@@ -71,10 +71,17 @@ public final class TitaniumCommands {
+             sender.sendMessage(secondary + "Author: " + primary + TitaniumSettings.getBrandAuthor());
+             sender.sendMessage(secondary + "Discord: " + primary + "https://" + TitaniumSettings.getBrandDiscord());
+             sender.sendMessage(secondary + "Commands:");
+-            sendCommandLink(sender, "/kb", "Manage knockback profiles");
++            if (TitaniumSettings.isCommandEnabled("commands.knockback.enabled")) {
++                sendCommandLink(sender, "/kb", "Manage knockback profiles");
++            }
+             sendCommandLink(sender, "/tps", "View server performance");
+             sendCommandLink(sender, "/ver", "View server version");
+-            sendCommandLink(sender, "/spark", "Open the bundled Spark profiler");
++            if (TitaniumSettings.isCommandEnabled("commands.spark-alias.enabled")) {
++                sendCommandLink(sender, "/spark", "Open the bundled Spark profiler");
++            }
++            if (TitaniumSettings.isCommandEnabled("commands.plugin-manager.enabled")) {
++                sendCommandLink(sender, "/plugin", "Manage plugin lifecycle");
++            }
+             return true;
+         }
+ 
+@@ -175,6 +182,8 @@ public final class TitaniumCommands {
+ 
+         private static void showActiveProfile(CommandSender sender) {
+             String worldName = sender instanceof Player ? ((Player) sender).getWorld().getName() : "default";
++            sender.sendMessage(TitaniumSettings.color("theme.secondary") + "World: "
++                    + TitaniumSettings.color("theme.primary") + worldName);
+             showProfile(sender, PandaSpigotKnockbackConfig.getWorldProfileName(worldName));
+         }
+ 
+@@ -241,17 +250,18 @@ public final class TitaniumCommands {
+         private static void sendDamageProfile(CommandSender sender, String profileName, String key, String title,
+                                               PandaSpigotKnockbackConfig.Profile profile) {
+             String secondary = TitaniumSettings.color("theme.secondary");
+-            sender.sendMessage(secondary + title + ":");
+-            sendEditable(sender, profileName, key + ".horizontal", "  Horizontal", profile.horizontalMultiplier);
+-            sendEditable(sender, profileName, key + ".vertical", "  Vertical", profile.verticalMultiplier);
+-            sendEditable(sender, profileName, key + ".friction", "  Friction", profile.frictionMultiplier);
+-            sendEditable(sender, profileName, key + ".horizontalDrag", "  Horizontal drag", profile.horizontalDragMultiplier);
+-            sendEditable(sender, profileName, key + ".verticalDrag", "  Vertical drag", profile.verticalDragMultiplier);
+-            sendEditable(sender, profileName, key + ".verticalLimit", "  Vertical limit", profile.verticalLimitMultiplier);
+-            sendEditable(sender, profileName, key + ".sprintHorizontal", "  Sprint horizontal", profile.sprintHorizontalMultiplier);
+-            sendEditable(sender, profileName, key + ".sprintVertical", "  Sprint vertical", profile.sprintVerticalMultiplier);
+-            sendEditable(sender, profileName, key + ".resistance", "  Resistance", profile.resistanceMultiplier);
+-            sendEditable(sender, profileName, key + ".attackerSlowdown", "  Attacker slowdown", profile.attackerSlowdownMultiplier);
++            TextComponent row = new TextComponent(secondary + title + ": ");
++            appendEditable(row, profileName, key + ".horizontal", "H", profile.horizontalMultiplier);
++            appendEditable(row, profileName, key + ".vertical", "V", profile.verticalMultiplier);
++            appendEditable(row, profileName, key + ".friction", "F", profile.frictionMultiplier);
++            appendEditable(row, profileName, key + ".horizontalDrag", "HD", profile.horizontalDragMultiplier);
++            appendEditable(row, profileName, key + ".verticalDrag", "VD", profile.verticalDragMultiplier);
++            appendEditable(row, profileName, key + ".verticalLimit", "VL", profile.verticalLimitMultiplier);
++            appendEditable(row, profileName, key + ".sprintHorizontal", "SH", profile.sprintHorizontalMultiplier);
++            appendEditable(row, profileName, key + ".sprintVertical", "SV", profile.sprintVerticalMultiplier);
++            appendEditable(row, profileName, key + ".resistance", "R", profile.resistanceMultiplier);
++            appendEditable(row, profileName, key + ".attackerSlowdown", "AS", profile.attackerSlowdownMultiplier);
++            sendComponent(sender, row);
+         }
+ 
+         private static void sendEditable(CommandSender sender, String profile, String key, String title, Object value) {
+@@ -265,6 +275,19 @@ public final class TitaniumCommands {
+             sendComponent(sender, row);
+         }
+ 
++        private static void appendEditable(TextComponent row, String profile, String key, String label, Object value) {
++            String secondary = TitaniumSettings.color("theme.secondary");
++            String primary = TitaniumSettings.color("theme.primary");
++            TextComponent separator = new TextComponent(secondary + " | ");
++            TextComponent field = new TextComponent(primary + label + "=" + value);
++            String command = "/kb set " + profile + " " + key + " " + value;
++            field.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command));
++            field.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
++                    new ComponentBuilder(secondary + "Click to edit\n" + primary + command).create()));
++            row.addExtra(separator);
++            row.addExtra(field);
++        }
++
+         private static void success(CommandSender sender, String message) {
+             sender.sendMessage(TitaniumSettings.color("theme.primary") + message);
+         }

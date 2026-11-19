@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: StoicWord <134773085+StoicWord@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 14:18:30 +0000
+Subject: [PATCH] Avoid skipping unrelated Spark plugins
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+diff --git a/src/main/java/org/spigotmc/TitaniumCommands.java b/src/main/java/org/spigotmc/TitaniumCommands.java
+index e5a2a2c1c16d802c6b25fed2df635729eb38d9d3..f0afca43e7c6a28f4ddbb4854b10574cc0fd0b26 100644
+--- a/src/main/java/org/spigotmc/TitaniumCommands.java
++++ b/src/main/java/org/spigotmc/TitaniumCommands.java
+@@ -65,7 +65,8 @@ public final class TitaniumCommands {
+ 
+         File[] existingSparkJars = pluginsFolder.listFiles((directory, name) -> {
+             String lowerCaseName = name.toLowerCase(Locale.ROOT);
+-            return lowerCaseName.startsWith("spark") && lowerCaseName.endsWith(".jar");
++            return "spark.jar".equals(lowerCaseName)
++                    || (lowerCaseName.startsWith("spark-") && lowerCaseName.endsWith(".jar"));
+         });
+         if (existingSparkJars == null) {
+             Bukkit.getLogger().severe("Could not inspect plugins directory for Spark: " + pluginsFolder);
